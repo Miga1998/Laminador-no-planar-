@@ -1318,6 +1318,28 @@ def _eval(srf, u, v, fu=False, fv=False, swap=False):
     return (p.X, p.Y, p.Z)
 
 
+def _align_seam_xy(curve, reference, rg, label):
+    """Find the seam in XY, then change it on the original 3D curve.
+
+    A 3D nearest-point search slides along an inclined layer when its Z rises.
+    PlanarProjection preserves the curve parameter, so only the search is flat;
+    the original geometry and its subsequent 3D arc-length sampling are retained.
+    """
+    if not all(finite(value) for value in (reference.X, reference.Y, reference.Z)):
+        raise ValueError('Costura no finita en la capa {}.'.format(label))
+    projected = curve.DuplicateCurve()
+    if projected is None or not projected.Transform(rg.Transform.PlanarProjection(rg.Plane.WorldXY)):
+        raise ValueError('No se pudo proyectar la costura en XY en la capa {}.'.format(label))
+    length = projected.GetLength()
+    if not finite(length) or length <= 1e-6:
+        raise ValueError('Contorno sin longitud XY valida en la capa {}.'.format(label))
+    ok, parameter = projected.ClosestPoint(rg.Point3d(reference.X, reference.Y, 0.0))
+    if not ok or not finite(parameter):
+        raise ValueError('No se pudo localizar la costura en XY en la capa {}.'.format(label))
+    if not curve.ChangeClosedCurveSeam(parameter):
+        raise ValueError('No se pudo cambiar la costura en la capa {}.'.format(label))
+
+
 def slice_layers(pared, sup_a, sup_b, n_puntos=100, capas=None, h_nom=30.0, costura=None,
                  grid=25, tol=None):
     """Devuelve (contornos de abajo arriba [N puntos], curvas de capa, notas)."""
@@ -1372,7 +1394,7 @@ def slice_layers(pared, sup_a, sup_b, n_puntos=100, capas=None, h_nom=30.0, cost
 
     c0, c1 = contour(0.0, 'inicial (superficie_1)'), contour(1.0, 'final (superficie_2)')
     flip = mean_z(c0) > mean_z(c1)
-    notes = []
+    notes = ['Costura alineada en XY; se conserva el muestreo por longitud 3D.']
     if flip:
         notes.append('superficie_1 estaba arriba: se ordenan las capas de abajo arriba automaticamente.')
     if capas is None or int(capas) < 1:
@@ -1388,9 +1410,7 @@ def slice_layers(pared, sup_a, sup_b, n_puntos=100, capas=None, h_nom=30.0, cost
         c = c.DuplicateCurve()
         if seam_ref is None:
             seam_ref = rg.Point3d(*costura) if costura is not None else c.PointAtStart
-        ok, tc = c.ClosestPoint(seam_ref)
-        if ok:
-            c.ChangeClosedCurveSeam(tc)
+        _align_seam_xy(c, seam_ref, rg, i + 1)
         params = c.DivideByCount(n_puntos, True)
         pts = [(c.PointAt(p).X, c.PointAt(p).Y, c.PointAt(p).Z) for p in params]
         if len(pts) == n_puntos + 1 and d3(pts[0], pts[-1]) <= 1e-6:

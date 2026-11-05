@@ -14,6 +14,7 @@ Archivo completo: Miga_Laminador_Diagnostico.py. Se parte del original adjunto, 
 
 ## Cambios y evidencia
 
+- Costura buscada en la proyeccion XY de cada contorno, usando su parametro en la curva 3D original. No cambia la longitud 3D usada para muestrear ni la formula de altura efectiva.
 - Cierre de vuelta para ubicar ;PASS: coincidencia XY a 1e-6 mm, independiente de tol_xy. La vuelta abierta incluye su cierre mediante el primer punto de la siguiente rama; el siguiente ;PASS se coloca después de ese punto. pass_path conserva el punto anterior como ancla.
 - Desactivada la reclasificación automática de G1 cortos ascendentes como transiciones: un G1 de deposición debe validarse. Los movimientos declarados explícitamente sin deposición siguen siendo distinguibles.
 - tol_xy predeterminado 3 mm en el escritor y en run_slicer. No se amplió la ventana de match_pass ni se relajó el bloqueo por altura.
@@ -26,23 +27,25 @@ Pruebas con Python 3.12: círculos de radios 30, 100 y 500 mm, 100 puntos y seis
 
 ## Qué revisar en el modelo
 
-No hay .3dm/.gh ni coordenadas de las vueltas del caso de 93 fallos. No se ha reproducido ese fallo concreto. Tampoco se recibió Miga_Laminador_Diagnostico.py anterior.
+Se recibieron el .gh y el .3dm del caso. Sus tres referencias geometricas coinciden. El .gh guardado contiene un fragmento anterior en el laminador; para actualizar el componente usa el cargador y el script completo de este repositorio.
 
-slice_layers alinea la costura por ClosestPoint 3D a la costura de la capa anterior y normaliza el sentido por área XY. Esto no garantiza correspondencia entre lóbulos en una pared compleja. build_helix interpola puntos de igual índice y debe comprobarse visualmente que no crea atajos en esquinas. match_pass sigue estaciones XY sobre la vuelta inferior con ventana local y diferencia cíclica cuando el soporte está cerrado en XY. La curva helicoidal puede tener distinta Z en los extremos de esa costura; pick_pair intenta resolverla por coherencia de avance. No se cambió ese algoritmo sin datos del fallo.
+Se reconstruyeron numericamente las intersecciones de las superficies planas con la pared vertical del .3dm, usando sus NURBS y una discretizacion densa, fuera de Rhino. Con 100 puntos por vuelta y 21 vueltas se reprodujeron los 93 bloqueos y las primeras 15 lineas/estados comunicados. Con la costura buscada en XY quedan cero bloqueos y 2000 tramos compensados. Consulta [DIAGNOSTICO_COSTURA.md](DIAGNOSTICO_COSTURA.md).
 
-Para FUERA_DE_VENTANA compara los extremos rojos y estaciones_error con el límite ;PASS de cada vuelta: hay candidatos laterales, pero fuera de la ventana, por lo que aumentar tol_xy no es el primer diagnóstico. SIN_SOPORTE y AMBIGUO tienen causas diferentes. El período 101 coincide con 100 destinos más un comentario ;PASS, pero no demuestra por sí solo que el defecto esté en la costura.
+La causa es el ClosestPoint 3D que antes alineaba la costura: al subir en una capa inclinada, el punto mas cercano tambien se desplaza lateralmente. En este modelo el desplazamiento llega a unos 10.13 mm entre capas y acumula unos 109.81 mm respecto al inicio. build_helix mezcla puntos del mismo indice, por lo que ese cambio de fase afecta la costura y las esquinas interiores.
 
-Para continuar hace falta el .gh/.3dm con pared y superficies, o coordenadas XYZ ordenadas de cada contorno/vuelta, junto con auditoria y estaciones_error. Comprueba unidades mm, sentido, costura y ausencia de autointersecciones. No hace falta ejecutar el robot para esta fase.
+Se corrige solo la busqueda de costura en slice_layers: se proyecta una copia al plano XY, se busca alli la referencia y se aplica el parametro encontrado a la curva 3D original. Se conserva DivideByCount sobre longitud 3D, el sentido por area, build_helix, los limites PASS y match_pass. Si la proyeccion o el cambio de costura falla, se bloquea con un error explicito; no se recurre a la busqueda 3D.
+
+No se amplio tol_xy=3 mm ni la ventana de estaciones y no se anadio soporte artificial en la costura. La base inicial sigue requiriendo validacion explicita. Esta reproduccion numerica no sustituye la ejecucion de la nueva llamada RhinoCommon en Rhino 7/GhPython.
 
 RobotStudio pendiente: conversión RAPID en modo feed para respetar F/60; herramientas, workobject, orientación, configuración, alcance, singularidades, colisiones, redondeo y velocidad efectiva. No se validó en IRC5 ni la sincronización de bomba. La salida diagonal original se conserva, pero no está validada como retirada ni controla la bomba; por eso se recomienda salida=False al diagnosticar.
 
 ## Pruebas locales del nucleo numerico
 
-Desde la carpeta de este repositorio: `python3 verificar.py`.
+Desde la carpeta de este repositorio: `python3 verificar.py` y `python3 verificar_costura.py`.
 Las pruebas no requieren Rhino, no sustituyen la validacion en GhPython y no ejecutan el robot.
 
 ## Descarga
 
 Usa Code > Download ZIP en GitHub o descarga MIGA_carga_completa.zip desde su pagina de archivo.
 Extrae Miga_Laminador_Diagnostico.py en C:\MIGA\ y pega el contenido de Cargador_GhPython.py en el mismo componente GhPython.
-El cargador usa execfile con globals para conservar las entradas y salidas del componente y cargar el archivo entero, sin copiar sus 1481 lineas.
+El cargador usa execfile con globals para conservar las entradas y salidas del componente y cargar el archivo entero, sin copiar todo el script.
